@@ -1,96 +1,173 @@
 #include <algorithm>
 #include <bitset>
 #include <concepts>
-#include <format>
+#include <iostream>
 #include <optional>
 #include <print>
 #include <queue>
 #include <ranges>
 #include <stack>
+#include <string>
 #include <string_view>
+#include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
-// =========================================================================
-// 1. 標準で未対応なコンテナの formatter 拡張
-// =========================================================================
-template <typename T, typename C>
-struct std::formatter<std::queue<T, C>> : std::formatter<std::string_view> {
-    auto format(const std::queue<T, C>& q_orig, std::format_context& ctx) const {
-        auto q = q_orig;
-        std::vector<T> v;
-        v.reserve(q.size());
-        while (!q.empty()) {
-            v.push_back(q.front());
-            q.pop();
-        }
-        return std::formatter<std::string_view>::format(std::format("queue{}", v), ctx);
-    }
-};
-
-template <typename T, typename C>
-struct std::formatter<std::stack<T, C>> : std::formatter<std::string_view> {
-    auto format(const std::stack<T, C>& s_orig, std::format_context& ctx) const {
-        auto s = s_orig;
-        std::vector<T> v;
-        v.reserve(s.size());
-        while (!s.empty()) {
-            v.push_back(s.top());
-            s.pop();
-        }
-        std::ranges::reverse(v);
-        return std::formatter<std::string_view>::format(std::format("stack{}", v), ctx);
-    }
-};
-
-template <typename T, typename C, typename Comp>
-struct std::formatter<std::priority_queue<T, C, Comp>> : std::formatter<std::string_view> {
-    auto format(const std::priority_queue<T, C, Comp>& pq_orig, std::format_context& ctx) const {
-        auto pq = pq_orig;
-        std::vector<T> v;
-        v.reserve(pq.size());
-        while (!pq.empty()) {
-            v.push_back(pq.top());
-            pq.pop();
-        }
-        return std::formatter<std::string_view>::format(std::format("priority_queue{}", v), ctx);
-    }
-};
-
-template <typename T>
-struct std::formatter<std::optional<T>> : std::formatter<std::string_view> {
-    auto format(const std::optional<T>& opt, std::format_context& ctx) const {
-        if (opt) {
-            return std::formatter<std::string_view>::format(std::format("opt({})", *opt), ctx);
-        } else {
-            return std::formatter<std::string_view>::format("nullopt", ctx);
-        }
-    }
-};
-
-template <size_t N>
-struct std::formatter<std::bitset<N>> : std::formatter<std::string_view> {
-    auto format(const std::bitset<N>& b, std::format_context& ctx) const {
-        return std::formatter<std::string_view>::format(b.to_string(), ctx);
-    }
-};
-
-// =========================================================================
-// 2. 2次元レンジ（グリッド）判定 Concept & 出力ロジック
-// =========================================================================
 namespace debug_internal {
+
+// =========================================================================
+// 1. 各種 Concept & 前方宣言
+// =========================================================================
 template <typename T>
 concept is_string_like = std::is_convertible_v<T, std::string_view>;
 
-// 「自身がレンジ」かつ「文字列ではない」かつ「要素もレンジ」である型を2次元グリッドと判定
 template <typename T>
 concept is_2d_range =
     std::ranges::range<T> && !is_string_like<T> && requires { requires std::ranges::range<std::ranges::range_reference_t<T>>; };
 
-// カンマ区切りの変数名パース
+// 各種オーバーロードの前方宣言
+template <typename T>
+void print_val(const T& val);
+template <typename T, typename U>
+void print_val(const std::pair<T, U>& p);
+template <typename... Ts>
+void print_val(const std::tuple<Ts...>& t);
+template <typename T>
+void print_val(const std::optional<T>& opt);
+template <typename T, typename C>
+void print_val(const std::queue<T, C>& q_orig);
+template <typename T, typename C>
+void print_val(const std::stack<T, C>& s_orig);
+template <typename T, typename C, typename Comp>
+void print_val(const std::priority_queue<T, C, Comp>& pq_orig);
+template <size_t N>
+void print_val(const std::bitset<N>& b);
+
+// =========================================================================
+// 2. 個別型の出力実装
+// =========================================================================
+template <typename T, typename U>
+void print_val(const std::pair<T, U>& p) {
+    std::print(stderr, "(");
+    print_val(p.first);
+    std::print(stderr, ", ");
+    print_val(p.second);
+    std::print(stderr, ")");
+}
+
+template <typename Tuple, size_t... Is>
+void print_tuple_helper(const Tuple& t, std::index_sequence<Is...>) {
+    std::print(stderr, "(");
+    size_t i = 0;
+    auto print_elem = [&](const auto& elem) {
+        if (i++ > 0) std::print(stderr, ", ");
+        print_val(elem);
+    };
+    (print_elem(std::get<Is>(t)), ...);
+    std::print(stderr, ")");
+}
+
+template <typename... Ts>
+void print_val(const std::tuple<Ts...>& t) {
+    print_tuple_helper(t, std::index_sequence_for<Ts...>{});
+}
+
+template <typename T>
+void print_val(const std::optional<T>& opt) {
+    if (opt) {
+        std::print(stderr, "opt(");
+        print_val(*opt);
+        std::print(stderr, ")");
+    } else {
+        std::print(stderr, "nullopt");
+    }
+}
+
+template <typename T, typename C>
+void print_val(const std::queue<T, C>& q_orig) {
+    auto q = q_orig;
+    std::print(stderr, "queue[");
+    bool first = true;
+    while (!q.empty()) {
+        if (!first) std::print(stderr, ", ");
+        first = false;
+        print_val(q.front());
+        q.pop();
+    }
+    std::print(stderr, "]");
+}
+
+template <typename T, typename C>
+void print_val(const std::stack<T, C>& s_orig) {
+    auto s = s_orig;
+    std::vector<T> v;
+    v.reserve(s.size());
+    while (!s.empty()) {
+        v.push_back(s.top());
+        s.pop();
+    }
+    std::ranges::reverse(v);
+    std::print(stderr, "stack[");
+    bool first = true;
+    for (const auto& elem : v) {
+        if (!first) std::print(stderr, ", ");
+        first = false;
+        print_val(elem);
+    }
+    std::print(stderr, "]");
+}
+
+template <typename T, typename C, typename Comp>
+void print_val(const std::priority_queue<T, C, Comp>& pq_orig) {
+    auto pq = pq_orig;
+    std::print(stderr, "priority_queue[");
+    bool first = true;
+    while (!pq.empty()) {
+        if (!first) std::print(stderr, ", ");
+        first = false;
+        print_val(pq.top());
+        pq.pop();
+    }
+    std::print(stderr, "]");
+}
+
+template <size_t N>
+void print_val(const std::bitset<N>& b) {
+    std::print(stderr, "{}", b.to_string());
+}
+
+// 汎用（レンジ・プリミティブ型）の出力
+template <typename T>
+void print_val(const T& val) {
+    using U = std::remove_cvref_t<T>;
+    if constexpr (is_string_like<U>) {
+        std::print(stderr, "{}", std::string_view(val));
+    } else if constexpr (std::ranges::range<U>) {
+        std::print(stderr, "[");
+        bool first = true;
+        for (const auto& elem : val) {
+            if (!first) std::print(stderr, ", ");
+            first = false;
+            print_val(elem);
+        }
+        std::print(stderr, "]");
+    } else if constexpr (std::is_same_v<U, bool>) {
+        std::print(stderr, "{}", val ? "true" : "false");
+    } else if constexpr (std::is_same_v<U, char>) {
+        std::print(stderr, "'{}'", val);
+    } else {
+        std::print(stderr, "{}", val);
+    }
+}
+
+// =========================================================================
+// 3. 変数名パーサー & デバッグ出力本体
+// =========================================================================
 inline std::vector<std::string_view> split_names(std::string_view s) {
     std::vector<std::string_view> names;
-    int paren = 0;
+    int paren = 0;  // (), [], {} 用
+    int angle = 0;  // <> (テンプレート引数) 用
     bool in_str = false, in_char = false;
     size_t start = 0;
 
@@ -109,13 +186,17 @@ inline std::vector<std::string_view> split_names(std::string_view s) {
                 paren++;
             else if (c == ')' || c == ']' || c == '}')
                 paren--;
-            else if (c == ',' && paren == 0) {
+            else if (c == '<')
+                angle++;
+            else if (c == '>')
+                angle--;
+            else if (c == ',' && paren == 0 && angle == 0) {
                 auto sub = s.substr(start, i - start);
                 while (!sub.empty() && (sub.front() == ' ' || sub.front() == '\t'))
                     sub.remove_prefix(1);
                 while (!sub.empty() && (sub.back() == ' ' || sub.back() == '\t'))
                     sub.remove_suffix(1);
-                names.push_back(sub);
+                if (!sub.empty()) names.push_back(sub);
                 start = i + 1;
             }
         }
@@ -125,7 +206,7 @@ inline std::vector<std::string_view> split_names(std::string_view s) {
         sub.remove_prefix(1);
     while (!sub.empty() && (sub.back() == ' ' || sub.back() == '\t'))
         sub.remove_suffix(1);
-    names.push_back(sub);
+    if (!sub.empty()) names.push_back(sub);
     return names;
 }
 
@@ -142,7 +223,6 @@ void print_debug(int line, std::string_view names_str, const Args&... args) {
         std::string_view name = (idx < names.size()) ? names[idx] : "";
         constexpr bool is_2d = is_2d_range<T>;
 
-        // 改行位置の自動調整
         if (idx == 0) {
             std::print(stderr, "{} = ", name);
         } else {
@@ -153,7 +233,6 @@ void print_debug(int line, std::string_view names_str, const Args&... args) {
             }
         }
 
-        // 2次元グリッドの場合のフォーマット出力
         if constexpr (is_2d) {
             if (std::ranges::empty(val)) {
                 std::print(stderr, "[]");
@@ -162,17 +241,18 @@ void print_debug(int line, std::string_view names_str, const Args&... args) {
                 int width = 2;
                 if constexpr (std::ranges::sized_range<T>) {
                     size_t sz = std::ranges::size(val);
-                    if (sz >= 100) width = std::to_string(sz - 1).size();
+                    if (sz >= 100) width = static_cast<int>(std::to_string(sz - 1).size());
                 }
                 size_t r = 0;
                 for (const auto& row : val) {
-                    // 行番号を揃えて出力: "    [ 0] [1, 2, 3]"
-                    std::print(stderr, "    [{:>{}}] {}\n", r++, width, row);
+                    std::print(stderr, "    [{:>{}}] ", r++, width);
+                    print_val(row);
+                    std::print(stderr, "\n");
                 }
                 std::print(stderr, "  ]");
             }
         } else {
-            std::print(stderr, "{}", val);
+            print_val(val);
         }
 
         prev_was_2d = is_2d;
@@ -189,7 +269,7 @@ inline void print_debug(int line, std::string_view) {
 }  // namespace debug_internal
 
 // =========================================================================
-// 3. debug マクロ定義
+// 4. debug マクロ定義
 // =========================================================================
 #if defined(LOCAL) || !defined(ONLINE_JUDGE)
 #define debug(...) debug_internal::print_debug(__LINE__, #__VA_ARGS__ __VA_OPT__(, ) __VA_ARGS__)
