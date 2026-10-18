@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
@@ -226,6 +227,88 @@ template <typename T1 = default_type, typename T2 = default_type, typename Size,
           std::enable_if_t<std::is_integral_v<Size> && !std::is_same_v<Size, bool>, int> = 0>
 std::vector<std::pair<T1, T2>> read_vec_pair(Size n, bool zero_indexed = false) {
     return read_vec<std::pair<T1, T2>>(n, zero_indexed);
+}
+
+template <typename T = default_type, typename Size, std::enable_if_t<std::is_integral_v<Size> && !std::is_same_v<Size, bool>, int> = 0>
+std::vector<T> read_sorted_vec(Size n, bool zero_indexed = false) {
+    auto v = read_vec<T>(n, zero_indexed);
+    std::sort(v.begin(), v.end());
+    return v;
+}
+
+template <typename T = default_type>
+std::vector<T> read_sorted_vec(bool zero_indexed = false) {
+    auto v = read_vec<T>(zero_indexed);
+    std::sort(v.begin(), v.end());
+    return v;
+}
+
+template <typename T = default_type, typename Size, typename Compare,
+          std::enable_if_t<std::is_integral_v<Size> && !std::is_same_v<Size, bool>, int> = 0>
+std::vector<T> read_sorted_vec(Size n, Compare comp, bool zero_indexed = false) {
+    auto v = read_vec<T>(n, zero_indexed);
+    std::sort(v.begin(), v.end(), comp);
+    return v;
+}
+
+template <typename T = default_type, typename Compare>
+std::vector<T> read_sorted_vec(Compare comp, bool zero_indexed = false) {
+    auto v = read_vec<T>(zero_indexed);
+    std::sort(v.begin(), v.end(), comp);
+    return v;
+}
+
+template <typename T = default_type, typename Size, std::enable_if_t<std::is_integral_v<Size> && !std::is_same_v<Size, bool>, int> = 0>
+std::vector<std::pair<T, int>> read_indexed_vec(Size n, bool zero_indexed = false) {
+    std::vector<std::pair<T, int>> v(n);
+    input_detail::begin_input();
+    for (int i = 0; i < static_cast<int>(n); ++i) {
+        input_detail::read_one(std::cin, v[i].first);
+        v[i].second = i;
+    }
+    if (zero_indexed) {
+        for (auto& elem : v) {
+            adjust_zero_indexed(elem.first);
+        }
+    }
+    return v;
+}
+
+template <typename T = default_type>
+std::vector<std::pair<T, int>> read_indexed_vec(bool zero_indexed = false) {
+    int n;
+    input_detail::read_one(std::cin, n);
+    return read_indexed_vec<T>(n, zero_indexed);
+}
+
+template <typename T = default_type, typename Size, std::enable_if_t<std::is_integral_v<Size> && !std::is_same_v<Size, bool>, int> = 0>
+std::vector<std::pair<T, int>> read_sorted_indexed_vec(Size n, bool zero_indexed = false) {
+    auto v = read_indexed_vec<T>(n, zero_indexed);
+    std::stable_sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    return v;
+}
+
+template <typename T = default_type>
+std::vector<std::pair<T, int>> read_sorted_indexed_vec(bool zero_indexed = false) {
+    auto v = read_indexed_vec<T>(zero_indexed);
+    std::stable_sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    return v;
+}
+
+template <
+    typename T = default_type, typename Size, typename Compare,
+    std::enable_if_t<std::is_integral_v<Size> && !std::is_same_v<Size, bool> && !std::is_same_v<std::decay_t<Compare>, bool>, int> = 0>
+std::vector<std::pair<T, int>> read_sorted_indexed_vec(Size n, Compare comp, bool zero_indexed = false) {
+    auto v = read_indexed_vec<T>(n, zero_indexed);
+    std::stable_sort(v.begin(), v.end(), [&](const auto& a, const auto& b) { return comp(a.first, b.first); });
+    return v;
+}
+
+template <typename T = default_type, typename Compare, std::enable_if_t<!std::is_same_v<std::decay_t<Compare>, bool>, int> = 0>
+std::vector<std::pair<T, int>> read_sorted_indexed_vec(Compare comp, bool zero_indexed = false) {
+    auto v = read_indexed_vec<T>(zero_indexed);
+    std::stable_sort(v.begin(), v.end(), [&](const auto& a, const auto& b) { return comp(a.first, b.first); });
+    return v;
 }
 
 template <typename T1 = default_type, typename T2 = default_type>
