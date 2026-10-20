@@ -25,23 +25,46 @@ inline bool chmax(T& a, const U& b) {
     return false;
 }
 
-template <std::integral T>
-inline T div_ceil(T a, T b) {
-    if (a > 0) return a / b + (a % b != 0);
-    return a / b;
+template <typename T, typename U>
+using common_int_t =
+    std::conditional_t<std::is_signed_v<T> || std::is_signed_v<U>, std::make_signed_t<std::common_type_t<T, U>>, std::common_type_t<T, U>>;
+
+template <std::integral T, std::integral U>
+[[nodiscard]] constexpr auto div_floor(T a, U b) {
+    using C = common_int_t<T, U>;
+    C ca = static_cast<C>(a);
+    C cb = static_cast<C>(b);
+    C q = ca / cb;
+    C r = ca % cb;
+    if (r != 0 && ((ca < 0) != (cb < 0))) {
+        --q;
+    }
+    return q;
 }
 
-template <std::integral T>
-inline T div_floor(T a, T b) {
-    if (a < 0) return a / b - (a % b != 0);
-    return a / b;
+template <std::integral T, std::integral U>
+[[nodiscard]] constexpr auto div_ceil(T a, U b) {
+    using C = common_int_t<T, U>;
+    C ca = static_cast<C>(a);
+    C cb = static_cast<C>(b);
+    C q = ca / cb;
+    C r = ca % cb;
+    if (r != 0 && ((ca < 0) == (cb < 0))) {
+        ++q;
+    }
+    return q;
 }
 
-template <std::integral T>
-inline T mod(T a, T m) {
-    a %= m;
-    if (a < 0) a += m;
-    return a;
+template <std::integral T, std::integral U>
+[[nodiscard]] constexpr auto mod(T a, U m) {
+    using C = common_int_t<T, U>;
+    C ca = static_cast<C>(a);
+    C cm = static_cast<C>(m);
+    C r = ca % cm;
+    if (r < 0) {
+        r += (cm < 0 ? -cm : cm);
+    }
+    return r;
 }
 
 template <typename T>
