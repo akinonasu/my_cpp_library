@@ -11,6 +11,7 @@
 /*
 // 区間加算・区間最小値 RangeAddMin
 // 区間加算・区間最大値 RangeAddMax
+// 区間加算・区間和 RangeAddSum
 // 区間変更・区間最小値 RangeUpdateMin
 // 区間変更・区間最大値 RangeUpdateMax
 // 区間変更・区間和 RangeUpdateSum
