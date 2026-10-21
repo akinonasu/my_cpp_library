@@ -8,6 +8,15 @@
 #include <print>
 #include <vector>
 
+/*
+// 区間加算・区間最小値 RangeAddMin
+// 区間加算・区間最大値 RangeAddMax
+// 区間変更・区間最小値 RangeUpdateMin
+// 区間変更・区間最大値 RangeUpdateMax
+// 区間変更・区間和 RangeUpdateSum
+// 区間アフィン変換 RangeAffineSum
+*/
+
 // --- 遅延セグメントツリー本体 ---
 // S: 要素の型
 // Op: 要素同士のマージ (S, S) -> S
