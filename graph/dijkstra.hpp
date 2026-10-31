@@ -52,6 +52,8 @@ class Dijkstra {
         g[from].push_back(Edge{to, cost, id});
     }
 
+    void add_directed_edge(int from, int to, T cost, int id = -1) { add_edge(from, to, cost, id); };
+
     // 無向辺の追加
     void add_undirected_edge(int u, int v, T cost, int id = -1) {
         add_edge(u, v, cost, id);
