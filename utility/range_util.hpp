@@ -71,3 +71,108 @@ template <typename T, typename Val>
 IndexRange range_oc(const std::vector<T>& v, Val a, Val b) {
     return range_right_closed(v, a, b);
 }
+
+namespace detail::index_comb_impl {
+
+template <std::size_t K, std::integral Int>
+    requires(K > 0)
+class view : public std::ranges::view_interface<view<K, Int>> {
+   private:
+    Int first_{0};
+    Int last_{0};
+
+    class iterator {
+       private:
+        Int last_{0};
+        std::array<Int, K> idx_{};
+        bool is_end_ = false;
+
+       public:
+        using iterator_concept = std::forward_iterator_tag;
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = decltype([]<std::size_t... Is>(std::index_sequence<Is...>) { return std::tuple<decltype(((void)Is, Int{}))...>{}; }(std::make_index_sequence<K>{}));
+        using difference_type = std::ptrdiff_t;
+
+        iterator() = default;
+
+        constexpr iterator(Int first, Int last) : last_(last) {
+            // 要素数が K 未満なら何もしない（即終了）
+            if (last - first < static_cast<Int>(K)) {
+                is_end_ = true;
+                return;
+            }
+            for (std::size_t i = 0; i < K; ++i) {
+                idx_[i] = first + static_cast<Int>(i);
+            }
+        }
+
+        constexpr auto operator*() const noexcept {
+            return [&]<std::size_t... Is>(std::index_sequence<Is...>) { return std::make_tuple(idx_[Is]...); }(std::make_index_sequence<K>{});
+        }
+
+        constexpr iterator& operator++() noexcept {
+            for (std::size_t i = K; i-- > 0;) {
+                // 上限チェック: i 番目が到達可能な最大値未満か？
+                if (idx_[i] + 1 <= last_ - static_cast<Int>(K - i)) {
+                    ++idx_[i];
+                    for (std::size_t j = i + 1; j < K; ++j) {
+                        idx_[j] = idx_[j - 1] + 1;
+                    }
+                    return *this;
+                }
+            }
+            is_end_ = true;
+            return *this;
+        }
+
+        constexpr iterator operator++(int) noexcept {
+            auto tmp = *this;
+            ++(*this);
+            return tmp;
+        }
+
+        constexpr bool operator==(std::default_sentinel_t) const noexcept { return is_end_; }
+        constexpr bool operator==(const iterator& other) const noexcept {
+            if (is_end_ && other.is_end_) return true;
+            if (is_end_ != other.is_end_) return false;
+            return idx_ == other.idx_;
+        }
+    };
+
+   public:
+    constexpr view() = default;
+    constexpr explicit view(Int n) : first_(0), last_(n) {}
+    constexpr view(Int first, Int last) : first_(first), last_(last) {}
+
+    constexpr auto begin() const { return iterator(first_, last_); }
+    constexpr auto end() const { return std::default_sentinel; }
+};
+
+}  // namespace detail::index_comb_impl
+
+// =========================================================
+// グローバル関数: どこからでも直接呼べる
+// =========================================================
+
+// 0 <= i < j < k < n
+template <std::size_t K, std::integral Int>
+[[nodiscard]] constexpr auto combinations(Int n) {
+    return detail::index_comb_impl::view<K, Int>(n);
+}
+
+// first <= i < j < k < last
+template <std::size_t K, std::integral Int>
+[[nodiscard]] constexpr auto combinations(Int first, Int last) {
+    return detail::index_comb_impl::view<K, Int>(first, last);
+}
+
+// 別名としても使えるようにエイリアス関数も提供
+template <std::size_t K, std::integral Int>
+[[nodiscard]] constexpr auto index_combinations(Int n) {
+    return combinations<K, Int>(n);
+}
+
+template <std::size_t K, std::integral Int>
+[[nodiscard]] constexpr auto index_combinations(Int first, Int last) {
+    return combinations<K, Int>(first, last);
+}
