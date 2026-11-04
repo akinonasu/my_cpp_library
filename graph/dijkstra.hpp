@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "components/radixheap.hpp"
+#include "components/RadixHeap.hpp"
 
 inline constexpr std::int64_t DIJKSTRA_INF = 1'000'000'000'000'000'000;  // 1e18
 
