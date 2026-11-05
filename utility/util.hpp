@@ -26,8 +26,7 @@ inline bool chmax(T& a, const U& b) {
 }
 
 template <typename T, typename U>
-using common_int_t =
-    std::conditional_t<std::is_signed_v<T> || std::is_signed_v<U>, std::make_signed_t<std::common_type_t<T, U>>, std::common_type_t<T, U>>;
+using common_int_t = std::conditional_t<std::is_signed_v<T> || std::is_signed_v<U>, std::make_signed_t<std::common_type_t<T, U>>, std::common_type_t<T, U>>;
 
 template <std::integral T, std::integral U>
 [[nodiscard]] constexpr auto div_floor(T a, U b) {
@@ -130,4 +129,19 @@ constexpr int digit_sum(std::string_view s) {
         }
     }
     return sum;
+}
+
+template <std::ranges::input_range R>
+auto run_length_encoding(const R& r) {
+    using T = std::ranges::range_value_t<R>;
+    std::vector<std::pair<T, int>> res;
+
+    for (const auto& x : r) {
+        if (res.empty() || res.back().first != x) {
+            res.emplace_back(x, 1);
+        } else {
+            res.back().second++;
+        }
+    }
+    return res;
 }
