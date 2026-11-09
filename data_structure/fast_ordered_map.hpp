@@ -1,169 +1,155 @@
 #include <algorithm>
+#include <chrono>
 #include <print>
+#include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
-// ============================================================================
-// Fast B-Tree Map (std::map の高速代替)
-// ============================================================================
-template <typename Key, typename Val, int B = 8>
-class FastBTreeMap {
+template <typename Key, typename Val>
+struct OrderedNode {
+    Key first{};
+    Val second{};
+    int forward[20]{};  // レベルごとの次ノードのインデックス
+};
+
+// 構造化束縛用設定
+namespace std {
+template <typename K, typename V>
+struct tuple_size<OrderedNode<K, V>> : std::integral_constant<size_t, 2> {};
+template <typename K, typename V>
+struct tuple_size<const OrderedNode<K, V>> : std::integral_constant<size_t, 2> {};
+template <size_t I, typename K, typename V>
+struct tuple_element<I, OrderedNode<K, V>> {
+    using type = std::conditional_t<I == 0, const K, V>;
+};
+template <size_t I, typename K, typename V>
+struct tuple_element<I, const OrderedNode<K, V>> {
+    using type = std::conditional_t<I == 0, const K, const V>;
+};
+}  // namespace std
+template <size_t I, typename K, typename V>
+decltype(auto) get(OrderedNode<K, V>& b) {
+    if constexpr (I == 0)
+        return (b.first);
+    else
+        return (b.second);
+}
+template <size_t I, typename K, typename V>
+decltype(auto) get(const OrderedNode<K, V>& b) {
+    if constexpr (I == 0)
+        return (b.first);
+    else
+        return (b.second);
+}
+
+// ------------------- FastOrderedMap (SkipList) -------------------
+template <typename Key, typename Val>
+class FastOrderedMap {
    public:
-    static constexpr int MAX_K = 2 * B - 1;  // 1ノードあたりの最大キー数 (15)
-    static constexpr int MAX_C = 2 * B;      // 最大子ノード数 (16)
-
-    struct Entry {
-        Key key{};
-        Val val{};
-    };
-
-    struct Node {
-        int num = 0;
-        bool leaf = true;
-        Entry entries[MAX_K];
-        int children[MAX_C];
-    };
+    using Node = OrderedNode<Key, Val>;
+    static constexpr int MAX_LEVEL = 20;
 
    private:
-    int root = -1;
-    int num_entries = 0;
     std::vector<Node> pool;
+    int num_entries = 0;
 
-    int new_node(bool leaf) {
-        int idx = static_cast<int>(pool.size());
-        pool.emplace_back();
-        pool.back().leaf = leaf;
-        return idx;
+    static unsigned long xor_shift() {
+        static unsigned long x = 88172645463325252ULL;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        return x;
     }
 
-    void split_child(int p_idx, int i) {
-        int c_idx = pool[p_idx].children[i];
-        int z_idx = new_node(pool[c_idx].leaf);
-
-        auto& c = pool[c_idx];
-        auto& z = pool[z_idx];
-
-        z.num = B - 1;
-        for (int j = 0; j < B - 1; ++j) {
-            z.entries[j] = std::move(c.entries[j + B]);
-        }
-        if (!c.leaf) {
-            for (int j = 0; j < B; ++j) {
-                z.children[j] = c.children[j + B];
-            }
-        }
-        c.num = B - 1;
-
-        auto& p = pool[p_idx];
-        for (int j = p.num; j > i; --j) {
-            p.children[j + 1] = p.children[j];
-            p.entries[j] = std::move(p.entries[j - 1]);
-        }
-        p.children[i + 1] = z_idx;
-        p.entries[i] = std::move(c.entries[B - 1]);
-        p.num++;
-    }
-
-    Val* insert_non_full(int u, const Key& key) {
-        auto& node = pool[u];
-        // ノード内を連続配列上で二分探索（L1キャッシュヒット）
-        int i = std::lower_bound(node.entries, node.entries + node.num, key, [](const Entry& e, const Key& k) { return e.key < k; }) - node.entries;
-
-        if (i < node.num && node.entries[i].key == key) {
-            return &node.entries[i].val;
-        }
-
-        if (node.leaf) {
-            for (int j = node.num; j > i; --j) {
-                node.entries[j] = std::move(node.entries[j - 1]);
-            }
-            node.entries[i] = Entry{key, Val{}};
-            node.num++;
-            num_entries++;
-            return &node.entries[i].val;
-        } else {
-            if (pool[node.children[i]].num == MAX_K) {
-                split_child(u, i);
-                if (key > pool[u].entries[i].key) {
-                    i++;
-                } else if (key == pool[u].entries[i].key) {
-                    return &pool[u].entries[i].val;
-                }
-            }
-            return insert_non_full(pool[u].children[i], key);
-        }
+    int random_level() {
+        int lvl = 1;
+        while ((xor_shift() & 1) && lvl < MAX_LEVEL)
+            ++lvl;
+        return lvl;
     }
 
    public:
-    FastBTreeMap() { pool.reserve(1024); }
+    FastOrderedMap() {
+        pool.reserve(1024);
+        pool.emplace_back();  // index 0 をダミーヘッドノードとして使用
+    }
 
     int size() const { return num_entries; }
     bool empty() const { return num_entries == 0; }
     void clear() {
         pool.clear();
-        root = -1;
+        pool.emplace_back();
         num_entries = 0;
     }
 
     Val& operator[](const Key& key) {
-        if (root == -1) {
-            root = new_node(true);
+        int cur = 0;
+        int update[MAX_LEVEL];
+        for (int i = MAX_LEVEL - 1; i >= 0; --i) {
+            while (pool[cur].forward[i] != 0 && pool[pool[cur].forward[i]].first < key) {
+                cur = pool[cur].forward[i];
+            }
+            update[i] = cur;
         }
-        if (pool[root].num == MAX_K) {
-            int s = new_node(false);
-            pool[s].children[0] = root;
-            split_child(s, 0);
-            root = s;
+
+        int next = pool[cur].forward[0];
+        if (next != 0 && pool[next].first == key) {
+            return pool[next].second;  // 既存キー
         }
-        return *insert_non_full(root, key);
+
+        // 新規ノード挿入
+        int lvl = random_level();
+        int new_idx = static_cast<int>(pool.size());
+        pool.emplace_back();
+        pool[new_idx].first = key;
+        pool[new_idx].second = Val{};
+
+        for (int i = 0; i < lvl; ++i) {
+            pool[new_idx].forward[i] = pool[update[i]].forward[i];
+            pool[update[i]].forward[i] = new_idx;
+        }
+        num_entries++;
+        return pool[new_idx].second;
     }
 
-    // 高速検索 (ポインタ取得)
-    Val* find_ptr(const Key& key) {
-        int u = root;
-        while (u != -1) {
-            auto& node = pool[u];
-            int i = std::lower_bound(node.entries, node.entries + node.num, key, [](const Entry& e, const Key& k) { return e.key < k; }) - node.entries;
-            if (i < node.num && node.entries[i].key == key) {
-                return &node.entries[i].val;
+    bool contains(const Key& key) const {
+        int cur = 0;
+        for (int i = MAX_LEVEL - 1; i >= 0; --i) {
+            while (pool[cur].forward[i] != 0 && pool[pool[cur].forward[i]].first < key) {
+                cur = pool[cur].forward[i];
             }
-            if (node.leaf) break;
-            u = node.children[i];
         }
-        return nullptr;
+        int next = pool[cur].forward[0];
+        return (next != 0 && pool[next].first == key);
     }
 
-    bool contains(const Key& key) { return find_ptr(key) != nullptr; }
+    // イテレータ (レベル0を辿ることで自動的にソート順になる)
+    struct Iterator {
+        int idx;
+        std::vector<Node>* p_pool;
 
-    // 二分探索: key 以上の最小の要素へのポインタ (Entry: {key, val}) を返す
-    Entry* lower_bound(const Key& key) {
-        Entry* best = nullptr;
-        int u = root;
-        while (u != -1) {
-            auto& node = pool[u];
-            int i = std::lower_bound(node.entries, node.entries + node.num, key, [](const Entry& e, const Key& k) { return e.key < k; }) - node.entries;
-            if (i < node.num) {
-                best = &node.entries[i];
-                if (node.entries[i].key == key) return best;  // 完全一致
-            }
-            if (node.leaf) break;
-            u = node.children[i];
+        Node& operator*() const { return (*p_pool)[idx]; }
+        Node* operator->() const { return &(*p_pool)[idx]; }
+        Iterator& operator++() {
+            idx = (*p_pool)[idx].forward[0];
+            return *this;
         }
-        return best;
-    }
+        bool operator==(const Iterator& o) const { return idx == o.idx; }
+        bool operator!=(const Iterator& o) const { return idx != o.idx; }
+    };
 
-    // 昇順走査
-    template <typename F>
-    void for_each(F&& func) const {
-        auto dfs = [&](auto self, int u) -> void {
-            if (u == -1) return;
-            const auto& node = pool[u];
-            for (int i = 0; i < node.num; ++i) {
-                if (!node.leaf) self(self, node.children[i]);
-                func(node.entries[i].key, node.entries[i].val);
+    Iterator begin() { return Iterator(pool[0].forward[0], &pool); }
+    Iterator end() { return Iterator(0, &pool); }
+
+    // 二分探索: key 以上の最小要素を指すイテレータを返す
+    Iterator lower_bound(const Key& key) {
+        int cur = 0;
+        for (int i = MAX_LEVEL - 1; i >= 0; --i) {
+            while (pool[cur].forward[i] != 0 && pool[pool[cur].forward[i]].first < key) {
+                cur = pool[cur].forward[i];
             }
-            if (!node.leaf) self(self, node.children[node.num]);
-        };
-        dfs(dfs, root);
+        }
+        return Iterator(pool[cur].forward[0], &pool);
     }
 };
