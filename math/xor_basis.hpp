@@ -95,6 +95,26 @@ struct XorBasis {
         return res;
     }
 
+    std::vector<T> all_values() const {
+        if (sz > 22) {
+            // 2^23 ≒ 8.3 * 10^6 要素。これを超える場合は競技プログラミングでは危険
+            return {};
+        }
+
+        auto rref = get_reduced_basis();
+        std::vector<T> res;
+        res.reserve(1L << sz);
+        res.push_back(0);  // 空集合のXOR値
+
+        for (T b : rref) {
+            int cur_sz = res.size();
+            for (int i = 0; i < cur_sz; ++i) {
+                res.push_back(res[i] ^ b);
+            }
+        }
+        return res;
+    }
+
     /**
      * @brief 作成可能なXOR値のうち、相異なる値の中で k 番目に小さい値を求める (1-indexed)
      * @note 空集合のXOR値 0 は 1 番目として扱われます。
