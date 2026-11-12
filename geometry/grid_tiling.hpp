@@ -34,6 +34,34 @@ class StringGrid {
         }
     }
 
+    static StringGrid read(int h, int w) {
+        assert(h >= 0 && w >= 0);
+        std::vector<std::string> s(h);
+        for (int i = 0; i < h; ++i) {
+            std::cin >> s[i];
+        }
+        return StringGrid(s);
+    }
+
+    static StringGrid from_coordinates(const std::vector<std::pair<int, int>>& coords) {
+        if (coords.empty()) return StringGrid(0, 0);
+        int min_r = coords[0].first, max_r = coords[0].first;
+        int min_c = coords[0].second, max_c = coords[0].second;
+        for (const auto& [r, c] : coords) {
+            min_r = std::min(min_r, r);
+            max_r = std::max(max_r, r);
+            min_c = std::min(min_c, c);
+            max_c = std::max(max_c, c);
+        }
+        int h = max_r - min_r + 1;
+        int w = max_c - min_c + 1;
+        StringGrid res(h, w, '.');
+        for (const auto& [r, c] : coords) {
+            res(r - min_r, c - min_c) = '#';
+        }
+        return res;
+    }
+
     bool in_bounds(int r, int c) const { return 0 <= r && r < H && 0 <= c && c < W; }
     std::string& operator[](int r) { return g[r]; }
     const std::string& operator[](int r) const { return g[r]; }
