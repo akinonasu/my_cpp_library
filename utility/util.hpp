@@ -110,7 +110,6 @@ inline bool is_palindrome(std::string_view s) {
 }
 
 constexpr int digit_sum(long n, int base = 10) {
-    // 負の数の場合やオーバーフロー(LONG_MIN)を考慮して符号なしに変換
     unsigned long u = (n < 0) ? -static_cast<unsigned long>(n) : static_cast<unsigned long>(n);
     int sum = 0;
     while (u > 0) {
@@ -120,7 +119,6 @@ constexpr int digit_sum(long n, int base = 10) {
     return sum;
 }
 
-// 文字列版: 64bit整数に収まらない巨大な数値の桁和を求める (10進法)
 constexpr int digit_sum(std::string_view s) {
     int sum = 0;
     for (char c : s) {
