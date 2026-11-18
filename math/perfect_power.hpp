@@ -31,18 +31,59 @@ inline int cmp_pow(unsigned long base, int exp, unsigned long target) {
     return 0;
 }
 
+// p 乗数になり得るかの軽量な剰余フィルタ
+inline bool pass_mod_filter(int p, unsigned long n) {
+    if (p == 5) {
+        unsigned long m = n % 11;
+        return m <= 1 || m == 10;
+    }
+    if (p == 7) {
+        unsigned long m = n % 29;
+        return m <= 1 || m == 12 || m == 17 || m == 28;
+    }
+    if (p == 11) {
+        unsigned long m = n % 23;
+        return m <= 1 || m == 22;
+    }
+    if (p == 23) {
+        unsigned long m = n % 47;
+        return m <= 1 || m == 46;
+    }
+    if (p == 29) {
+        unsigned long m = n % 59;
+        return m <= 1 || m == 58;
+    }
+    return true;
+}
+
 // floor(n^(1/p)) を厳密に求める (p >= 1)
 inline unsigned long integer_nth_root_u64(unsigned long n, int p) {
     if (p == 1 || n <= 1) return n;
     if (p >= 64) return 1;
 
-    long double approx;
+    if (p >= 10) {
+        int bw = std::bit_width(n);
+        if (bw <= p) return 1;
+        unsigned long lo = 1UL << ((bw - 1) / p);
+        unsigned long hi = 1UL << ((bw + p - 1) / p);
+        while (lo + 1 < hi) {
+            unsigned long mid = lo + (hi - lo) / 2;
+            if (cmp_pow(mid, p, n) <= 0) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        return lo;
+    }
+
+    double approx;
     if (p == 2) {
-        approx = std::sqrt(static_cast<long double>(n));
+        approx = std::sqrt(static_cast<double>(n));
     } else if (p == 3) {
-        approx = std::cbrt(static_cast<long double>(n));
+        approx = std::cbrt(static_cast<double>(n));
     } else {
-        approx = std::pow(static_cast<long double>(n), 1.0L / p);
+        approx = std::pow(static_cast<double>(n), 1.0 / p);
     }
 
     unsigned long r = static_cast<unsigned long>(approx);
@@ -82,13 +123,15 @@ inline bool is_perfect_power(long n) {
         }
         for (int p = 3; p * p <= rem; p += 2) {
             if (rem % p == 0) {
-                unsigned long r = perfect_power_impl::integer_nth_root_u64(abs_n, p);
-                if (perfect_power_impl::cmp_pow(r, p, abs_n) == 0) return true;
+                if (perfect_power_impl::pass_mod_filter(p, abs_n)) {
+                    unsigned long r = perfect_power_impl::integer_nth_root_u64(abs_n, p);
+                    if (perfect_power_impl::cmp_pow(r, p, abs_n) == 0) return true;
+                }
                 while (rem % p == 0)
                     rem /= p;
             }
         }
-        if (rem > 1) {
+        if (rem > 1 && perfect_power_impl::pass_mod_filter(rem, abs_n)) {
             unsigned long r = perfect_power_impl::integer_nth_root_u64(abs_n, rem);
             if (perfect_power_impl::cmp_pow(r, rem, abs_n) == 0) return true;
         }
@@ -103,6 +146,7 @@ inline bool is_perfect_power(long n) {
     for (int i = 1; perfect_power_impl::PRIMES[i] <= 37; ++i) {
         int p = perfect_power_impl::PRIMES[i];
         if (perfect_power_impl::cmp_pow(3, p, abs_n) > 0) break;
+        if (!perfect_power_impl::pass_mod_filter(p, abs_n)) continue;
         unsigned long r = perfect_power_impl::integer_nth_root_u64(abs_n, p);
         if (perfect_power_impl::cmp_pow(r, p, abs_n) == 0) return true;
     }
@@ -121,17 +165,18 @@ inline std::pair<bool, std::pair<long, int>> decompose_perfect_power(long n) {
     int b = 1;
     int tz = std::countr_zero(abs_n);
 
+    auto try_factor = [&](int p) {
+        while (perfect_power_impl::pass_mod_filter(p, abs_n)) {
+            unsigned long r = perfect_power_impl::integer_nth_root_u64(abs_n, p);
+            if (perfect_power_impl::cmp_pow(r, p, abs_n) != 0) break;
+            abs_n = r;
+            b *= p;
+        }
+    };
+
     if (tz > 0) {
         if (tz == 1) return {false, {n, 1}};
         int rem = tz;
-        auto try_factor = [&](int p) {
-            while (true) {
-                unsigned long r = perfect_power_impl::integer_nth_root_u64(abs_n, p);
-                if (perfect_power_impl::cmp_pow(r, p, abs_n) != 0) break;
-                abs_n = r;
-                b *= p;
-            }
-        };
         if ((rem & 1) == 0) {
             if (n > 0) try_factor(2);
             while ((rem & 1) == 0)
@@ -149,22 +194,12 @@ inline std::pair<bool, std::pair<long, int>> decompose_perfect_power(long n) {
         }
     } else {
         if (n > 0 && (abs_n & 7) == 1) {
-            while (true) {
-                unsigned long r = perfect_power_impl::integer_nth_root_u64(abs_n, 2);
-                if (r * r != abs_n) break;
-                abs_n = r;
-                b *= 2;
-            }
+            try_factor(2);
         }
         for (int i = 1; perfect_power_impl::PRIMES[i] <= 37; ++i) {
             int p = perfect_power_impl::PRIMES[i];
             if (perfect_power_impl::cmp_pow(3, p, abs_n) > 0) break;
-            while (true) {
-                unsigned long r = perfect_power_impl::integer_nth_root_u64(abs_n, p);
-                if (perfect_power_impl::cmp_pow(r, p, abs_n) != 0) break;
-                abs_n = r;
-                b *= p;
-            }
+            try_factor(p);
         }
     }
 
