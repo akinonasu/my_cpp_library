@@ -1,36 +1,33 @@
+#pragma once
+
 #include <algorithm>
 #include <cassert>
-#include <iostream>
-#include <print>
-#include <span>
+#include <limits>
+#include <utility>
 #include <vector>
 
+// ==========================================
+// 接頭辞最適値 DP (Best Prefix)
 // IsMax = true  : 最大値を求める (BestMaxPrefix)
 // IsMax = false : 最小値を求める (BestMinPrefix)
+// 時間計算量: 構築 / reset / merge_* / skip_zero O(N), get / get_best O(1)
+// 空間計算量: O(N)
+// 事前条件:
+//   - 0 <= n
+//   - merge_* に渡す配列 v のサイズは n と等しいこと
+// ==========================================
 template <bool IsMax = true>
-class BestPrefix {
-   public:
-    static constexpr long INF = 1L << 60;  // 64bit整数の安全な無限大
-    static constexpr long UNUSED = IsMax ? -INF : INF;
+struct BestPrefix {
+    static constexpr long inf = std::numeric_limits<long>::max() / 4;
+    static constexpr long unused = IsMax ? -inf : inf;
 
-   private:
-    int n = 0;
-    std::vector<long> pref;  // pref[i] = i まで進んだときの最適値
+    BestPrefix() : BestPrefix(0) {}
 
-    static constexpr long choose_better(long a, long b) noexcept {
-        if constexpr (IsMax)
-            return std::max(a, b);
-        else
-            return std::min(a, b);
-    }
+    explicit BestPrefix(long n) { reset(n); }
 
-   public:
-    BestPrefix() = default;
-
-    explicit BestPrefix(int n_) { reset(n_); }
-
-    explicit BestPrefix(std::span<const long> init, bool force_one = false) {
-        reset(static_cast<int>(init.size()));
+    template <class T>
+    explicit BestPrefix(const std::vector<T>& init, bool force_one = false) {
+        reset(std::ssize(init));
         if (force_one) {
             merge_with_one(init);
         } else {
@@ -38,57 +35,69 @@ class BestPrefix {
         }
     }
 
-    void reset(int n_) {
-        n = n_;
-        pref.assign(n + 1, UNUSED);
-        pref[0] = 0L;
+    void reset(long n) {
+        assert(0 <= n);
+        n_ = n;
+        pref_.assign(n_ + 1, unused);
+        pref_[0] = 0;
     }
 
     // 配列 v から 0 個以上の要素を使う（空区間を許容）
-    void merge_with_empty(std::span<const long> v) {
-        assert(static_cast<int>(v.size()) == n);
-        for (int i = 0; i < n; ++i) {
-            if (pref[i] == UNUSED) continue;
-            pref[i + 1] = choose_better(pref[i + 1], pref[i] + v[i]);
+    template <class T>
+    void merge_with_empty(const std::vector<T>& v) {
+        assert(std::ssize(v) == n_);
+        for (long i = 0; i < n_; ++i) {
+            if (pref_[i] == unused) continue;
+            pref_[i + 1] = choose_better(pref_[i + 1], pref_[i] + static_cast<long>(v[i]));
         }
     }
 
-    // 配列 v から 少なくとも1個以上の要素を使う（空区間を許容しない）
-    void merge_with_one(std::span<const long> v) {
-        assert(static_cast<int>(v.size()) == n);
-        std::vector<long> next(n + 1, UNUSED);
-
-        for (int i = 0; i < n; ++i) {
-            // ここで v の採用を開始する
-            if (pref[i] != UNUSED) {
-                next[i + 1] = choose_better(next[i + 1], pref[i] + v[i]);
+    // 配列 v から 1 個以上の要素を使う（空区間を許容しない）
+    template <class T>
+    void merge_with_one(const std::vector<T>& v) {
+        assert(std::ssize(v) == n_);
+        std::vector<long> next(n_ + 1, unused);
+        for (long i = 0; i < n_; ++i) {
+            long val = static_cast<long>(v[i]);
+            if (pref_[i] != unused) {
+                next[i + 1] = choose_better(next[i + 1], pref_[i] + val);
             }
-            // 既に開始している v の採用を継続する
-            if (next[i] != UNUSED) {
-                next[i + 1] = choose_better(next[i + 1], next[i] + v[i]);
+            if (next[i] != unused) {
+                next[i + 1] = choose_better(next[i + 1], next[i] + val);
             }
         }
-        pref = std::move(next);
+        pref_ = std::move(next);
     }
 
-    // 便宜用：値がすべて 0 のゼロ配列で空遷移（スキップ）を行う
+    // 値がすべて 0 の配列で空遷移（スキップ）を行う
     void skip_zero() {
-        for (int i = 0; i < n; ++i) {
-            if (pref[i] == UNUSED) continue;
-            pref[i + 1] = choose_better(pref[i + 1], pref[i]);
+        for (long i = 0; i < n_; ++i) {
+            if (pref_[i] == unused) continue;
+            pref_[i + 1] = choose_better(pref_[i + 1], pref_[i]);
         }
     }
 
-    // 途中のインデックス i までの最適値を取得
-    long get(int i) const {
-        assert(0 <= i && i <= n);
-        return pref[i];
+    // 接頭辞 [0, i) までの最適値を取得
+    long get(long i) const {
+        assert(0 <= i && i <= n_);
+        return pref_[i];
     }
 
-    // 全体（インデックス n）まで割り当て終えたときの最適値
-    long get_best() const { return pref[n]; }
+    // 全体 [0, n) までの最適値を取得
+    long get_best() const { return pref_[n_]; }
+
+   private:
+    long n_ = 0;
+    std::vector<long> pref_;
+
+    static long choose_better(long a, long b) {
+        if constexpr (IsMax) {
+            return std::max(a, b);
+        } else {
+            return std::min(a, b);
+        }
+    }
 };
 
-// 型エイリアス
 using BestMaxPrefix = BestPrefix<true>;
 using BestMinPrefix = BestPrefix<false>;
