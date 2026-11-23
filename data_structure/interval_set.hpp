@@ -1,162 +1,150 @@
+#pragma once
+
 #include <algorithm>
-#include <limits>
-#include <optional>
-#include <print>
+#include <cassert>
+#include <iostream>
 #include <set>
 #include <utility>
-#include <vector>
 
-/**
- * @brief 互いに素な半開区間 [l, r) を管理するデータ構造
- * @tparam T 座標の型 (int または long)
- */
-template <typename T = long>
-class IntervalSet {
+// 半開区間 [l, r) の集合を管理するデータ構造（隣接・交差する区間は自動でマージされる）
+// 空間計算量: O(N) (N は保持している極大区間の数)
+// 時間計算量: insert / erase は償却 O(log N)、その他クエリは O(log N) (size / total_length は O(1))
+template <class T = long>
+struct IntervalSet {
    private:
-    std::set<std::pair<T, T>> intervals;
-    T total_length = 0;
+    std::set<std::pair<T, T>> st_;
+    T total_len_ = 0;
+
+    // first > x を満たす最初のイテレータを返す
+    auto upper_bound_left(T x) const {
+        auto it = st_.lower_bound({x, x});
+        if (it != st_.end() && it->first == x) ++it;
+        return it;
+    }
 
    public:
-    IntervalSet() = default;
+    long size() const { return std::ssize(st_); }
+    bool empty() const { return st_.empty(); }
+    T total_length() const { return total_len_; }
 
-    /**
-     * @brief 半開区間 [l, r) を追加する (重複・隣接区間はマージされる)
-     * @return 新たにカバーされた長さ (増分)
-     * @complexity ならし O(log N)
-     */
+    void clear() {
+        st_.clear();
+        total_len_ = 0;
+    }
+
+    // 半開区間 [l, r) を追加し、新たに増加した長さを返す
+    // 事前条件: l <= r
     T insert(T l, T r) {
-        if (l >= r) return 0;
-        auto it = intervals.lower_bound({l, l});
-        if (it != intervals.begin()) {
-            auto pit = std::prev(it);
-            if (pit->second >= l) {  // 隣接または重複
-                it = pit;
-            }
+        assert(l <= r);
+        if (l == r) return 0;
+
+        auto it = upper_bound_left(l);
+        if (it != st_.begin()) {
+            auto prev = std::prev(it);
+            if (prev->second >= r) return 0;
+            if (prev->second >= l) it = prev;
         }
 
-        T nl = l, nr = r;
-        T removed_len = 0;
-        while (it != intervals.end() && it->first <= r) {
-            nl = std::min(nl, it->first);
-            nr = std::max(nr, it->second);
-            removed_len += it->second - it->first;
-            it = intervals.erase(it);
+        T removed = 0;
+        while (it != st_.end() && it->first <= r) {
+            l = std::min(l, it->first);
+            r = std::max(r, it->second);
+            removed += it->second - it->first;
+            it = st_.erase(it);
         }
+        st_.emplace_hint(it, l, r);
 
-        intervals.emplace(nl, nr);
-        T added_len = (nr - nl) - removed_len;
-        total_length += added_len;
-        return added_len;
+        T added = (r - l) - removed;
+        total_len_ += added;
+        return added;
     }
 
-    /**
-     * @brief 半開区間 [l, r) を削除する (重なっている部分を切り取る)
-     * @return 実際に削除された長さ
-     * @complexity ならし O(log N)
-     */
+    // 1点 [x, x + 1) を追加し、増加した長さ (0 または 1) を返す
+    T insert(T x) { return insert(x, x + 1); }
+
+    // 半開区間 [l, r) を削除し、減少した長さを返す
+    // 事前条件: l <= r
     T erase(T l, T r) {
-        if (l >= r) return 0;
-        auto it = intervals.lower_bound({l, l});
-        if (it != intervals.begin()) {
-            auto pit = std::prev(it);
-            if (pit->second > l) {  // 厳密に交差している場合のみ
-                it = pit;
-            }
-        }
+        assert(l <= r);
+        if (l == r) return 0;
 
-        std::vector<std::pair<T, T>> to_add;
-        T erased_len = 0;
-        while (it != intervals.end() && it->first < r) {
+        auto it = upper_bound_left(l);
+        if (it != st_.begin() && std::prev(it)->second > l) --it;
+
+        T removed = 0;
+        while (it != st_.end() && it->first < r) {
             auto [il, ir] = *it;
-            it = intervals.erase(it);
-            erased_len += ir - il;
+            it = st_.erase(it);
+            total_len_ -= ir - il;
+            removed += std::min(r, ir) - std::max(l, il);
             if (il < l) {
-                to_add.emplace_back(il, l);
+                st_.emplace_hint(it, il, l);
+                total_len_ += l - il;
             }
-            if (ir > r) {
-                to_add.emplace_back(r, ir);
+            if (r < ir) {
+                st_.emplace_hint(it, r, ir);
+                total_len_ += ir - r;
             }
         }
-
-        for (const auto& iv : to_add) {
-            intervals.insert(iv);
-            erased_len -= (iv.second - iv.first);
-        }
-
-        total_length -= erased_len;
-        return erased_len;
+        return removed;
     }
 
-    /**
-     * @brief 点 x を含む区間 [l, r) を取得する
-     */
-    std::optional<std::pair<T, T>> find(T x) const {
-        auto it = intervals.upper_bound({x, std::numeric_limits<T>::max()});
-        if (it != intervals.begin()) {
-            --it;
-            if (it->first <= x && x < it->second) {
-                return *it;
-            }
-        }
-        return std::nullopt;
+    // 1点 [x, x + 1) を削除し、減少した長さ (0 または 1) を返す
+    T erase(T x) { return erase(x, x + 1); }
+
+    // 点 x が集合に含まれるか
+    bool contains(T x) const { return find(x).first; }
+
+    // 半開区間 [l, r) 全体が集合に含まれるか
+    // 事前条件: l <= r
+    bool contains(T l, T r) const {
+        assert(l <= r);
+        if (l == r) return true;
+        auto it = upper_bound_left(l);
+        if (it == st_.begin()) return false;
+        --it;
+        return it->first <= l && r <= it->second;
     }
 
-    /**
-     * @brief 点 x がカバーされているかを判定する
-     */
-    bool covered(T x) const { return find(x).has_value(); }
-
-    bool contains(T x) const { return covered(x); }
-
-    /**
-     * @brief 区間 [l, r) 全体が単一の区間にカバーされているかを判定する
-     */
-    bool covered(T l, T r) const {
-        if (l >= r) return true;
-        auto it = intervals.upper_bound({l, std::numeric_limits<T>::max()});
-        if (it != intervals.begin()) {
-            --it;
-            if (it->first <= l && r <= it->second) {
-                return true;
-            }
-        }
-        return false;
+    // 半開区間 [l, r) と交わる部分が存在するか
+    // 事前条件: l <= r
+    bool intersects(T l, T r) const {
+        assert(l <= r);
+        if (l == r) return false;
+        auto it = upper_bound_left(l);
+        if (it != st_.begin() && std::prev(it)->second > l) return true;
+        return it != st_.end() && it->first < r;
     }
 
-    /**
-     * @brief x 以上の最小のカバーされていない点 (mex) を取得する
-     */
+    // 点 x を含む極大区間 [l, r) を返す（存在しない場合は {false, {0, 0}}）
+    std::pair<bool, std::pair<T, T>> find(T x) const {
+        auto it = upper_bound_left(x);
+        if (it == st_.begin()) return {false, {T{}, T{}}};
+        --it;
+        if (it->second > x) return {true, *it};
+        return {false, {T{}, T{}}};
+    }
+
+    // x 以上で集合に含まれない最小の値を返す
     T mex(T x = 0) const {
-        auto it = intervals.upper_bound({x, std::numeric_limits<T>::max()});
-        if (it != intervals.begin()) {
-            --it;
-            if (it->first <= x && x < it->second) {
-                return it->second;
-            }
+        auto it = upper_bound_left(x);
+        if (it != st_.begin() && std::prev(it)->second > x) {
+            return std::prev(it)->second;
         }
         return x;
     }
 
-    /**
-     * @brief カバーされている全体の長さを取得する
-     */
-    T length() const noexcept { return total_length; }
+    const std::set<std::pair<T, T>>& intervals() const { return st_; }
+    auto begin() const { return st_.begin(); }
+    auto end() const { return st_.end(); }
 
-    /**
-     * @brief 存在する区間の個数を取得する
-     */
-    int size() const noexcept { return static_cast<int>(intervals.size()); }
-
-    bool empty() const noexcept { return intervals.empty(); }
-
-    void clear() noexcept {
-        intervals.clear();
-        total_length = 0;
+    void dump() const {
+#ifdef LOCAL
+        std::cerr << "IntervalSet(len=" << total_len_ << "):";
+        for (const auto& [l, r] : st_) {
+            std::cerr << " [" << l << ", " << r << ")";
+        }
+        std::cerr << '\n';
+#endif
     }
-
-    // イテレータのサポート (範囲for文で [l, r) を走査可能)
-    auto begin() const noexcept { return intervals.begin(); }
-    auto end() const noexcept { return intervals.end(); }
-    auto rbegin() const noexcept { return intervals.rbegin(); }
-    auto rend() const noexcept { return intervals.rend(); }
 };
